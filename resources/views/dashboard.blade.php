@@ -1,3 +1,3 @@
-<x-layouts::app :title="__('Expense Tracker Dashboard')">
+<x-layouts::app :title="__('Dashboard')">
     <livewire:expense-tracker />
 </x-layouts::app>
