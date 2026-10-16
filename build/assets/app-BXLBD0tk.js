@@ -1,0 +1,1 @@
+document.addEventListener("DOMContentLoaded",function(){const e=document.getElementById("hamburger-button"),t=document.getElementById("mobile-menu");!e||!t||e.addEventListener("click",function(){t.classList.toggle("hidden");const n=e.getAttribute("aria-expanded")==="true";e.setAttribute("aria-expanded",!n)})});
