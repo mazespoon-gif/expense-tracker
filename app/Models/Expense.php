@@ -32,6 +32,7 @@ class Expense extends Model
         'Miscellaneous',
         'Debt',
         'Personal Care',
+        'Drinks',
     ];
 
     public function user()

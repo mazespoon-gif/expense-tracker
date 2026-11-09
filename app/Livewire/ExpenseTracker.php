@@ -2,6 +2,7 @@
 
 namespace App\Livewire;
 
+use App\Events\ExpenseAdded;
 use App\Models\Expense;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -17,10 +18,14 @@ class ExpenseTracker extends Component
     #[Validate('required|numeric|min:0.01')]
     public $amount = '';
 
-    #[Validate('required|in:School,Transport,Hobbies,Foods,Internet,Entertainment,Miscellaneous,Debt,Personal Care')]
+    #[Validate('required|in:School,Transport,Hobbies,Foods,Internet,Entertainment,Miscellaneous,Debt,Personal Care,Drinks')]
     public $category = '';
 
     public $showModal = false;
+
+    public $chartView = 'monthly';
+
+    public $categoryRange = 'all';
 
     public function save()
     {
@@ -35,8 +40,47 @@ class ExpenseTracker extends Component
 
         $this->reset(['description', 'amount', 'category', 'showModal']);
 
+        try {
+            event(new ExpenseAdded((int) Auth::id()));
+        } catch (\Throwable $e) {
+            report($e);
+        }
+
         $this->dispatch('notify', message: 'Expense added successfully');
-        $this->dispatch('expense-added');
+    }
+
+    public function refreshCharts()
+    {
+        $this->dispatchCharts();
+    }
+
+    public function setChartView($view)
+    {
+        $this->chartView = in_array($view, ['monthly', 'weekly'], true) ? $view : 'monthly';
+
+        $this->dispatchCharts();
+    }
+
+    public function setCategoryRange($range)
+    {
+        $this->categoryRange = in_array($range, ['all', 'week'], true) ? $range : 'all';
+
+        $this->dispatchCharts();
+    }
+
+    public function closeModal()
+    {
+        $this->reset(['description', 'amount', 'category']);
+        $this->showModal = false;
+    }
+
+    private function dispatchCharts(): void
+    {
+        $this->dispatch(
+            'charts-updated',
+            monthly: $this->monthlyChartData,
+            category: $this->categoryChartData,
+        );
     }
 
     #[Computed]
@@ -66,8 +110,20 @@ class ExpenseTracker extends Component
     }
 
     #[Computed]
+    public function thisWeekExpenses()
+    {
+        return Expense::where('user_id', Auth::id())
+            ->whereBetween('created_at', [now()->startOfWeek(), now()->endOfWeek()])
+            ->sum('amount');
+    }
+
+    #[Computed]
     public function monthlyChartData()
     {
+        if ($this->chartView === 'weekly') {
+            return $this->buildWeeklyChartData();
+        }
+
         $monthExpression = DB::connection()->getDriverName() === 'sqlite'
             ? "CAST(strftime('%m', created_at) AS INTEGER)"
             : 'MONTH(created_at)';
@@ -94,11 +150,43 @@ class ExpenseTracker extends Component
         ];
     }
 
+    private function buildWeeklyChartData(): array
+    {
+        $start = now()->startOfWeek();
+
+        $data = Expense::where('user_id', Auth::id())
+            ->whereBetween('created_at', [$start, now()->endOfWeek()])
+            ->selectRaw('DATE(created_at) as day, SUM(amount) as total')
+            ->groupBy('day')
+            ->pluck('total', 'day')
+            ->toArray();
+
+        $labels = [];
+        $totals = [];
+
+        for ($i = 0; $i < 7; $i++) {
+            $day = $start->copy()->addDays($i);
+
+            $labels[] = $day->format('D');
+            $totals[] = (float) ($data[$day->format('Y-m-d')] ?? 0);
+        }
+
+        return [
+            'labels' => $labels,
+            'data' => $totals,
+        ];
+    }
+
     #[Computed]
     public function categoryChartData()
     {
-        $data = Expense::where('user_id', Auth::id())
-            ->select('category')
+        $query = Expense::where('user_id', Auth::id());
+
+        if ($this->categoryRange === 'week') {
+            $query->whereBetween('created_at', [now()->startOfWeek(), now()->endOfWeek()]);
+        }
+
+        $data = $query->select('category')
             ->selectRaw('SUM(amount) as total')
             ->groupBy('category')
             ->orderByDesc('total')
@@ -107,6 +195,125 @@ class ExpenseTracker extends Component
         return [
             'labels' => $data->pluck('category')->toArray(),
             'data' => $data->pluck('total')->toArray(),
+        ];
+    }
+
+    #[Computed]
+    public function sparklineWeekData()
+    {
+        $start = now()->subDays(6)->startOfDay();
+        $end = now()->endOfDay();
+
+        $data = Expense::where('user_id', Auth::id())
+            ->whereBetween('created_at', [$start, $end])
+            ->selectRaw('DATE(created_at) as day, SUM(amount) as total')
+            ->groupBy('day')
+            ->pluck('total', 'day')
+            ->toArray();
+
+        $labels = [];
+        $totals = [];
+
+        for ($i = 6; $i >= 0; $i--) {
+            $day = now()->subDays($i);
+            $labels[] = $day->format('D');
+            $totals[] = (float) ($data[$day->format('Y-m-d')] ?? 0);
+        }
+
+        return [
+            'labels' => $labels,
+            'data' => $totals,
+        ];
+    }
+
+    #[Computed]
+    public function sparklineMonthData()
+    {
+        $start = now()->startOfMonth();
+        $end = now()->endOfDay();
+
+        $data = Expense::where('user_id', Auth::id())
+            ->whereBetween('created_at', [$start, $end])
+            ->selectRaw('DATE(created_at) as day, SUM(amount) as total')
+            ->groupBy('day')
+            ->pluck('total', 'day')
+            ->toArray();
+
+        $labels = [];
+        $totals = [];
+
+        for ($i = 1; $i <= now()->daysInMonth; $i++) {
+            $day = now()->setDay($i);
+            $labels[] = (string) $i;
+            $totals[] = (float) ($data[$day->format('Y-m-d')] ?? 0);
+        }
+
+        $prevStart = now()->subMonth()->startOfMonth();
+        $prevEnd = now()->subMonth()->endOfMonth();
+        $prevTotal = Expense::where('user_id', Auth::id())
+            ->whereBetween('created_at', [$prevStart, $prevEnd])
+            ->sum('amount');
+
+        $currentTotal = array_sum($totals);
+        $color = $currentTotal >= $prevTotal ? '#3b82f6' : '#ef4444';
+
+        return [
+            'labels' => $labels,
+            'data' => $totals,
+            'color' => $color,
+        ];
+    }
+
+    #[Computed]
+    public function sparklineTotalData()
+    {
+        return $this->sparklineWeekData;
+    }
+
+    #[Computed]
+    public function sparklineCategoryData()
+    {
+        $topCategory = Expense::where('user_id', Auth::id())
+            ->select('category')
+            ->selectRaw('SUM(amount) as total')
+            ->groupBy('category')
+            ->orderByDesc('total')
+            ->first()?->category;
+
+        if (! $topCategory) {
+            return [
+                'labels' => [],
+                'data' => [],
+                'color' => '#10b981',
+                'category' => null,
+            ];
+        }
+
+        $start = now()->subDays(6)->startOfDay();
+        $end = now()->endOfDay();
+
+        $data = Expense::where('user_id', Auth::id())
+            ->where('category', $topCategory)
+            ->whereBetween('created_at', [$start, $end])
+            ->selectRaw('DATE(created_at) as day, SUM(amount) as total')
+            ->groupBy('day')
+            ->pluck('total', 'day')
+            ->toArray();
+
+        $labels = [];
+        $totals = [];
+
+        for ($i = 6; $i >= 0; $i--) {
+            $day = now()->subDays($i);
+            $labels[] = $day->format('D');
+            $totals[] = (float) ($data[$day->format('Y-m-d')] ?? 0);
+        }
+
+        return [
+            'labels' => $labels,
+            'data' => $totals,
+            'color' => '#10b981',
+            'category' => $topCategory,
         ];
     }
 

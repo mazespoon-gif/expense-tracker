@@ -20,4 +20,27 @@ Route::view('dashboard', 'dashboard')
 Route::view('/expense-tracker', 'expense-tracker')
     ->name('expense-tracker');
 
+Route::view('/calendar', 'calendar')
+    ->middleware(['auth'])
+    ->name('calendar');
+
+Route::get('/api/expenses-by-date', function () {
+    $date = request('date');
+    if (! $date) {
+        return response()->json(['error' => 'Date is required'], 400);
+    }
+
+    $expenses = \App\Models\Expense::where('user_id', auth()->id())
+        ->whereDate('created_at', $date)
+        ->get(['id', 'description', 'amount', 'category', 'created_at']);
+
+    $total = $expenses->sum('amount');
+
+    return response()->json([
+        'date' => $date,
+        'expenses' => $expenses,
+        'total' => $total,
+    ]);
+})->middleware(['auth'])->name('api.expenses-by-date');
+
 require __DIR__.'/settings.php';

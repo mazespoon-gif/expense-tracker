@@ -38,7 +38,7 @@ class ExpenseRecords extends Component
     protected $rules = [
         'description' => 'required|string|max:255',
         'amount' => 'required|numeric|min:0',
-        'category' => 'required|string|in:School,Transport,Hobbies,Foods,Internet,Entertainment,Miscellaneous,Debt,Personal Care',
+        'category' => 'required|string|in:School,Transport,Hobbies,Foods,Internet,Entertainment,Miscellaneous,Debt,Personal Care,Drinks',
     ];
 
     public function updatedSearch()

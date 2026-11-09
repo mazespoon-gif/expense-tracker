@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="{{ str_replace('_', '-', app()->getLocale()) }}" class="dark">
+    <html lang="{{ str_replace('_', '-', app()->getLocale()) }}" class="{{ session('theme', 'dark') === 'dark' ? 'dark' : '' }}">
     <head>
         @include('partials.head')
     </head>
@@ -17,6 +17,9 @@
                     </flux:sidebar.item>
                     <flux:sidebar.item icon="document-text" :href="route('expense-tracker')" :current="request()->routeIs('expense-tracker')" wire:navigate>
                         {{ __('Records') }}
+                    </flux:sidebar.item>
+                    <flux:sidebar.item icon="calendar" :href="route('calendar')" :current="request()->routeIs('calendar')" wire:navigate>
+                        {{ __('Calendar') }}
                     </flux:sidebar.item>
                 </flux:sidebar.group>
             </flux:sidebar.nav>
